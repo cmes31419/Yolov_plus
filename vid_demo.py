@@ -100,7 +100,7 @@ def make_parser():
 
 
 # def get_image_list(path):
-#     image_names = []
+# image_names = []
 #     for maindir, subdir, file_name_list in os.walk(path):
 #         for filename in file_name_list:
 #             apath = os.path.join(maindir, filename)
@@ -129,13 +129,12 @@ def make_parser():
 #         ch = cv2.waitKey(0)
 #         if ch == 27 or ch == ord("q") or ch == ord("Q"):
 #             break
-
+#
 def imageflow_demo(predictor, vis_folder, current_time, args,exp):
     gframe = exp.gframe_val
     lframe = exp.lframe_val
     traj_linking = exp.traj_linking
     P, Cls = exp.defualt_p, exp.num_classes
-
     cap = cv2.VideoCapture(args.path)
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
@@ -143,15 +142,23 @@ def imageflow_demo(predictor, vis_folder, current_time, args,exp):
     save_folder = os.path.join(
         vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
     )
-
     os.makedirs(save_folder, exist_ok=True)
+
+    # print video info
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    logger.info(f"Video Info - Frames: {total_frames}, FPS: {fps}, Size: {width}x{height}")
+    logger.info(f"Processing with gframe_val={gframe}")
+
     ratio = min(predictor.test_size[0] / height, predictor.test_size[1] / width)
-    vid_save_path = os.path.join(save_folder, args.path.split("/")[-1])
     img_save_path = save_folder
+
+    vid_save_path = os.path.join(save_folder, args.path.split("/")[-1])
     logger.info(f"video save_path is {vid_save_path}")
+
     vid_writer = cv2.VideoWriter(
         vid_save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
     )
+
     frames = []
     outputs = []
     ori_frames = []
@@ -165,13 +172,15 @@ def imageflow_demo(predictor, vis_folder, current_time, args,exp):
             break
     res = []
     frame_len = len(frames)
+    logger.info(f"Processing {frame_len} frames")
     index_list = list(range(frame_len))
     if gframe != 0:
         random.seed(41)
         random.shuffle(index_list)
+        print(index_list)
         random.seed(41)
         random.shuffle(frames)
-        split_num = int(frame_len / (gframe))#
+        split_num = int(frame_len / (gframe)) # calculate the number of full batches
         for i in range(split_num):
             res.append(frames[i * gframe:(i + 1) * gframe])
         res.append(frames[(i + 1) * gframe:])
@@ -222,7 +231,7 @@ def imageflow_demo(predictor, vis_folder, current_time, args,exp):
         if args.save_result:
             vid_writer.write(result_frame)
             cv2.imwrite(os.path.join(img_save_path, str(img_idx) + '.jpg'), result_frame)
-
+#
 def main(exp, args):
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
@@ -248,6 +257,7 @@ def main(exp, args):
         exp.test_size = (args.tsize, args.tsize)
 
     model = exp.get_model()
+    #print(model)
     logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
     # logger.info("Model: {}".format(model))
 
