@@ -12,7 +12,7 @@ import torchvision
 from loguru import logger
 
 from yolox.models.post_process import postprocess,get_linking_mat
-from yolox.models.post_trans import MSA_yolov, LocalAggregation,visual_attention
+from .post_trans import MSA_yolov, LocalAggregation,visual_attention
 from yolox.utils import bboxes_iou
 from yolox.utils.box_op import box_cxcywh_to_xyxy, generalized_box_iou
 from .losses import IOUloss
@@ -400,35 +400,70 @@ class YOLOVHead(nn.Module):
         # elif self.kwargs.get('agg_type','localagg')=='msa':
         #     pass
 
-        # Attension timing
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
-
-        start_event.record()
-
         # use msa only
         if self.kwargs.get('agg_type','localagg')=='msa':
             print("  I'm using msa !!!")
             kwargs = self.kwargs
             kwargs.update({'lframe': lframe, 'gframe': gframe, 'afternum': self.Afternum})
+
+            # Agg timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+
             features_cls, features_reg = self.agg(features_cls_raw, features_reg_raw, cls_scores, fg_scores,
                                                  sim_thresh=self.sim_thresh,
                                                  ave=self.ave, use_mask=self.use_mask, **kwargs)
+            
+            end_event.record()
+            torch.cuda.synchronize()
+            agg_time = start_event.elapsed_time(end_event) / 1000.0
+            print(f"  agg time (GPU): {agg_time:.6f}s")
+
+            # decouple_reg timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+
             if self.kwargs.get('decouple_reg',False):
+                print("  enable decouple_reg")
                 _,features_reg = self.agg_iou(features_cls_raw, features_reg_raw, cls_scores, fg_scores,
                                                     sim_thresh=self.sim_thresh,
                                                     ave=self.ave, use_mask=self.use_mask, **kwargs)
+                
+            end_event.record()
+            torch.cuda.synchronize()
+            decouple_reg_time = start_event.elapsed_time(end_event) / 1000.0
+            print(f"  decouple_reg time (GPU): {decouple_reg_time:.6f}s")
+
+            # cls_pred timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+
             cls_preds = self.cls_pred(features_cls)
+
+            end_event.record()
+            torch.cuda.synchronize()
+            cls_pred_time = start_event.elapsed_time(end_event) / 1000.0
+            print(f"  cls_pred time (GPU): {cls_pred_time:.6f}s")
+
+            # reconf timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+
             if self.kwargs.get('reconf',False):
+                print("  enable reconf")
                 obj_preds = self.obj_pred(features_reg)
                 reg_preds = None
             else:
                 obj_preds, reg_preds = None, None
 
-        end_event.record()
-        torch.cuda.synchronize()
-        attension_time = start_event.elapsed_time(end_event) / 1000.0
-        print(f"  attension time (GPU): {attension_time:.6f}s")
+            end_event.record()
+            torch.cuda.synchronize()
+            reconf_time = start_event.elapsed_time(end_event) / 1000.0
+            print(f"  reconf time (GPU): {reconf_time:.6f}s")
 
         # Final timing
         start_event = torch.cuda.Event(enable_timing=True)
