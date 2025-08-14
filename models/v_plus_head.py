@@ -253,6 +253,9 @@ class YOLOVHead(nn.Module):
             conv.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def forward(self, xin, labels=None, imgs=None, nms_thresh=0.5, lframe=0, gframe=32):
+
+        print("  Hi, this is head !!!")
+
         outputs = []
         outputs_decode = []
         origin_preds = []
@@ -277,36 +280,11 @@ class YOLOVHead(nn.Module):
             obj_output = self.obj_preds[k](reg_feat)
             reg_output = self.reg_preds[k](reg_feat)
             cls_output = self.cls_preds[k](cls_feat)
-            if self.training:
-                output = torch.cat([reg_output, obj_output, cls_output], 1)
-                output_decode = torch.cat(
-                    [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
-                )
-                output, grid = self.get_output_and_grid(
-                    output, k, stride_this_level, xin[0].type()
-                )
-                x_shifts.append(grid[:, :, 0])
-                y_shifts.append(grid[:, :, 1])
-                expanded_strides.append(
-                    torch.zeros(1, grid.shape[1])
-                    .fill_(stride_this_level)
-                    .type_as(xin[0])
-                )
-                if self.use_l1:
-                    batch_size = reg_output.shape[0]
-                    hsize, wsize = reg_output.shape[-2:]
-                    reg_output = reg_output.view(
-                        batch_size, self.n_anchors, 4, hsize, wsize
-                    )
-                    reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
-                        batch_size, -1, 4
-                    )
-                    origin_preds.append(reg_output.clone())
-                outputs.append(output)
-            else:
-                output_decode = torch.cat(
-                    [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
-               )
+
+            # inference only
+            output_decode = torch.cat(
+                [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
+            )
             if self.kwargs.get('vid_cls',True):
                 raw_cls_features.append(vid_feat)
             else:
@@ -323,23 +301,8 @@ class YOLOVHead(nn.Module):
         decode_res = self.decode_outputs(outputs_decode, dtype=xin[0].type())
         preds_per_frame = []
 
-        if self.training:
-            assigned_packs = self.get_fg_idx(imgs,
-                x_shifts,
-                y_shifts,
-                expanded_strides,
-                labels,
-                torch.cat(outputs, 1),
-                origin_preds,
-                dtype=xin[0].dtype,
-                )
-            ota_idxs,cls_targets,reg_targets,\
-                obj_targets,fg_masks,num_fg,num_gts,l1_targets = assigned_packs
-
-            if not self.ota_mode: ota_idxs = None
-
-        else:
-            ota_idxs = None
+        # inference only
+        ota_idxs = None
 
         cls_feat_flatten = torch.cat(
             [x.flatten(start_dim=2) for x in raw_cls_features], dim=2
@@ -425,136 +388,28 @@ class YOLOVHead(nn.Module):
             else:
                 obj_preds, reg_preds = None, None
 
-        if self.training:
-            outputs = torch.cat(outputs, 1)
-            if not self.ota_mode:
-                stime = time.time()
-                (refine_cls_targets,
-                 refine_cls_masks,
-                 refine_obj_targets,
-                 refine_obj_masks) = (
-                    self.get_iou_based_label(pred_result,agg_idx,labels,outputs,reg_targets,cls_targets)
-                )
-                refine_cls_targets = torch.cat(refine_cls_targets, 0)
-                refine_cls_masks = torch.cat(refine_cls_masks, 0)
-                refine_obj_targets = torch.cat(refine_obj_targets, 0)
-                refine_obj_masks = torch.cat(refine_obj_masks, 0)
-            else:
-                refine_cls_targets, refine_cls_masks, refine_obj_targets = None, None, None
-                if not self.kwargs.get('vid_ota',False): #use the still object detector supervision
-                    #not cat ota idx to the candidates
-                    if self.kwargs.get('cls_ota',True):
-                        if not self.kwargs.get('cat_ota_fg',True):
-                            refine_cls_targets = []
-                            for i in range(len(ota_idxs)):
-                                tmp_reorder = cls_label_reorder[i]
-                                if ota_idxs[i] != None and tmp_reorder!=None and len(tmp_reorder):
-                                    tmp_cls_targets = cls_targets[i][torch.stack(tmp_reorder)]
-                                    refine_cls_targets.append(tmp_cls_targets)
-                            if len(refine_cls_targets):
-                                refine_cls_targets = torch.cat(refine_cls_targets, 0)
-                            else:
-                                refine_cls_targets = torch.cat(cls_targets, 0).new_zeros(0, self.num_classes)
-                    else:
-                        (refine_cls_targets,
-                         refine_cls_masks,
-                         _,
-                         iou_base_obj_masks) = (
-                            self.get_iou_based_label(pred_result, agg_idx, labels, outputs, reg_targets, cls_targets)
-                        )
-                        refine_cls_targets = torch.cat(refine_cls_targets, 0)
-                        refine_cls_masks = torch.cat(refine_cls_masks, 0)
-                else:#re-assign lable for vid detections
-                    vid_preds = outputs.clone().detach()
-                    bidx_accum = 0
-                    for b_idx,f_idx in enumerate(agg_idx):
-                        if f_idx is None: continue
-                        tmp_pred = vid_preds[b_idx,f_idx]
-                        #del other preds of the base detector
-                        vid_preds[b_idx, :] = -1e3
-                        tmp_pred[:,-self.num_classes:] = cls_preds[bidx_accum:bidx_accum+preds_per_frame[b_idx]]
-                        tmp_pred[:,4:5] = obj_preds[bidx_accum:bidx_accum+preds_per_frame[b_idx]]
-                        vid_preds[b_idx,f_idx] = tmp_pred
-                        bidx_accum += preds_per_frame[b_idx]
+        # inference only
+        #cls_preds, obj_preds = cls_preds.sigmoid(), obj_preds.sigmoid()
+        #refined_preds = torch.cat([reg_preds, obj_preds, cls_preds], 1) #[num_preds, 5+num_classes]
 
-                    vid_packs = self.get_fg_idx(imgs,
-                                                 x_shifts,
-                                                 y_shifts,
-                                                 expanded_strides,
-                                                 labels,
-                                                 vid_preds,
-                                                 origin_preds,
-                                                 dtype=xin[0].dtype,
-                                                 )
-                    vid_fg_idxs, vid_cls_targets, vid_reg_targets, \
-                        vid_obj_targets, vid_fg_masks, vid_num_fg, \
-                        vid_num_gts, vid_l1_targets = vid_packs
-                    refine_obj_masks,refine_cls_targets = [],[]
-                    for b_idx,f_idx in enumerate(agg_idx):
-                        if f_idx is None: continue
-                        f_idx = f_idx.cuda()
-                        refine_obj_masks.append(vid_fg_masks[b_idx][f_idx])
-                        tmp_cls_targets = []
-                        for feature_idx in f_idx[vid_fg_masks[b_idx][f_idx]]:
-                            cls_tar_idx = torch.where(feature_idx==vid_fg_idxs[b_idx])[0]
-                            tmp_cls_targets.append(vid_cls_targets[b_idx][cls_tar_idx])
-                        if len(tmp_cls_targets):
-                            tmp_cls_targets = torch.cat(tmp_cls_targets,0)
-                            refine_cls_targets.append(tmp_cls_targets)
-                    refine_obj_masks = torch.cat(refine_obj_masks,0)
-                    if len(refine_cls_targets):
-                        refine_cls_targets = torch.cat(refine_cls_targets, 0)
-                    else:
-                        refine_cls_targets = torch.cat(cls_targets, 0).new_zeros(0, self.num_classes)
+        #split refined_preds into frames according to preds_per_frame which is the number of preds in each frame
+        cls_per_frame, obj_per_frame, reg_per_frame = [], [], []
+        for i in range(len(preds_per_frame)):
+            if self.kwargs.get('reconf',False):
+                obj_per_frame.append(obj_preds[:preds_per_frame[i]].squeeze(-1))
+                obj_preds = obj_preds[preds_per_frame[i]:]
+            cls_per_frame.append(cls_preds[:preds_per_frame[i]])
+            cls_preds = cls_preds[preds_per_frame[i]:]
 
-
-            cls_targets = torch.cat(cls_targets, 0)
-            reg_targets = torch.cat(reg_targets, 0)
-            obj_targets = torch.cat(obj_targets, 0)
-            fg_masks = torch.cat(fg_masks, 0)
-            if self.use_l1:
-                l1_targets = torch.cat(l1_targets, 0)
-
-            return self.get_losses(
-                outputs,
-                cls_targets,
-                reg_targets,
-                obj_targets,
-                fg_masks,
-                num_fg,
-                num_gts,
-                l1_targets,
-                origin_preds,
-                cls_preds,
-                obj_preds,
-                reg_preds,
-                refine_obj_masks,
-                refine_cls_targets,
-                refine_cls_masks,
-                refine_obj_targets,
-            )
-        else:
-            #cls_preds, obj_preds = cls_preds.sigmoid(), obj_preds.sigmoid()
-            #refined_preds = torch.cat([reg_preds, obj_preds, cls_preds], 1) #[num_preds, 5+num_classes]
-
-            #split refined_preds into frames according to preds_per_frame which is the number of preds in each frame
-            cls_per_frame, obj_per_frame, reg_per_frame = [], [], []
-            for i in range(len(preds_per_frame)):
-                if self.kwargs.get('reconf',False):
-                    obj_per_frame.append(obj_preds[:preds_per_frame[i]].squeeze(-1))
-                    obj_preds = obj_preds[preds_per_frame[i]:]
-                cls_per_frame.append(cls_preds[:preds_per_frame[i]])
-                cls_preds = cls_preds[preds_per_frame[i]:]
-
-            if not self.kwargs.get('reconf',False): obj_per_frame = None
-            #obj_per_frame = None
-            result, result_ori = postprocess(copy.deepcopy(pred_result),
-                                             self.num_classes,
-                                             cls_per_frame,
-                                             conf_output = obj_per_frame,
-                                             nms_thre = nms_thresh,
-                                             )
-            return result, result_ori  # result
+        if not self.kwargs.get('reconf',False): obj_per_frame = None
+        #obj_per_frame = None
+        result, result_ori = postprocess(copy.deepcopy(pred_result),
+                                            self.num_classes,
+                                            cls_per_frame,
+                                            conf_output = obj_per_frame,
+                                            nms_thre = nms_thresh,
+                                            )
+        return result, result_ori  # result
 
     def get_output_and_grid(self, output, k, stride, dtype):
         grid = self.grids[k]
