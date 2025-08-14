@@ -43,59 +43,18 @@ class Exp(MyExp):
     def get_model(self):
         # rewrite get model func from yolox
         if self.backbone_name == 'MCSP':
+            logger.info("Using MCSP backbone")
             in_channels = [256, 512, 1024]
-            from yolox.models import YOLOPAFPN
+            # from yolox.models import YOLOPAFPN
+            from models.yolo_pafpn import YOLOPAFPN
             backbone = YOLOPAFPN(self.depth, self.width, in_channels=in_channels)
-        elif 'Swin' in self.backbone_name:
-            from yolox.models import YOLOPAFPN_Swin
-
-            if self.backbone_name == 'Swin_Tiny':
-                in_channels = [192, 384, 768]
-                out_channels = [192, 384, 768]
-                backbone = YOLOPAFPN_Swin(in_channels=in_channels,
-                                          out_channels=out_channels,
-                                          act=self.act,
-                                          in_features=(1, 2, 3))
-            elif self.backbone_name == 'Swin_Base':
-                in_channels = [256, 512, 1024]
-                out_channels = [256, 512, 1024]
-                backbone = YOLOPAFPN_Swin(in_channels=in_channels,
-                                          out_channels=out_channels,
-                                          act=self.act,
-                                          in_features=(1, 2, 3),
-                                          swin_depth=[2, 2, 18, 2],
-                                          num_heads=[4, 8, 16, 32],
-                                          base_dim=int(in_channels[0] / 2),
-                                          pretrain_img_size=self.pretrain_img_size,
-                                          window_size=self.window_size,
-                                          width=self.width,
-                                          depth=self.depth
-                                          )
-        elif 'Focal' in self.backbone_name:
-            from yolox.models import YOLOPAFPN_focal
-            fpn_in_channles = [96 * 4, 96 * 8, 96 * 16]
-            in_channels = self.focal_fpn_channels
-            backbone = YOLOPAFPN_focal(in_channels=fpn_in_channles,
-                                       out_channels=in_channels,
-                                       act=self.act,
-                                       in_features=(1, 2, 3),
-                                       depths=[2, 2, 18, 2],
-                                       focal_levels=[4, 4, 4, 4],
-                                       focal_windows=[3, 3, 3, 3],
-                                       use_conv_embed=True,
-                                       use_postln=True,
-                                       use_postln_in_modulation=False,
-                                       use_layerscale=True,
-                                       base_dim=192,  # int(in_channels[0])
-                                       depth=self.depth,
-                                       width=self.width
-                                       )
-
-
         else:
             raise NotImplementedError('backbone not support')
-        from yolox.models.v_plus_head import YOLOVHead
-        from yolox.models.yolov_plus import YOLOV
+
+        # from yolox.models.v_plus_head import YOLOVHead
+        # from yolox.models.yolov_plus import YOLOV
+        from models.v_plus_head import YOLOVHead
+        from models.yolov_plus import YOLOV
 
         def init_yolo(M):
             for m in M.modules():
@@ -144,38 +103,38 @@ class Exp(MyExp):
         self.model.head.initialize_biases(1e-2)
         return self.model
 
-    def get_optimizer(self, batch_size):
-        if "optimizer" not in self.__dict__:
-            if self.warmup_epochs > 0:
-                lr = self.warmup_lr
-            else:
-                lr = self.basic_lr_per_img * batch_size
+    # def get_optimizer(self, batch_size):
+    #     if "optimizer" not in self.__dict__:
+    #         if self.warmup_epochs > 0:
+    #             lr = self.warmup_lr
+    #         else:
+    #             lr = self.basic_lr_per_img * batch_size
 
-            pg0, pg1, pg2, pg3 = [], [], [], []  # optimizer parameter groups
+    #         pg0, pg1, pg2, pg3 = [], [], [], []  # optimizer parameter groups
 
-            for k, v in self.model.named_modules():
-                if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
-                    pg2.append(v.bias)  # biases
-                if isinstance(v, nn.BatchNorm2d) or "bn" in k:
-                    pg0.append(v.weight)  # no decay
-                elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
-                    if "head.stem" in k or "head.reg_convs" in k or "head.cls_convs" in k:
-                        pg3.append(v.weight)
-                        logger.info("head.weight: {}".format(k))
-                    else:
-                        pg1.append(v.weight)  # apply decay
+    #         for k, v in self.model.named_modules():
+    #             if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
+    #                 pg2.append(v.bias)  # biases
+    #             if isinstance(v, nn.BatchNorm2d) or "bn" in k:
+    #                 pg0.append(v.weight)  # no decay
+    #             elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
+    #                 if "head.stem" in k or "head.reg_convs" in k or "head.cls_convs" in k:
+    #                     pg3.append(v.weight)
+    #                     logger.info("head.weight: {}".format(k))
+    #                 else:
+    #                     pg1.append(v.weight)  # apply decay
 
-            optimizer = torch.optim.SGD(
-                pg0, lr=lr, momentum=self.momentum, nesterov=True
-            )
-            optimizer.add_param_group(
-                {"params": pg1, "weight_decay": self.weight_decay}
-            )  # add pg1 with weight_decay
-            optimizer.add_param_group({"params": pg2})
-            optimizer.add_param_group(
-                {"params": pg3, "lr": lr * self.stem_lr_ratio, "weight_decay": self.weight_decay}
-            )
-            self.optimizer = optimizer
+    #         optimizer = torch.optim.SGD(
+    #             pg0, lr=lr, momentum=self.momentum, nesterov=True
+    #         )
+    #         optimizer.add_param_group(
+    #             {"params": pg1, "weight_decay": self.weight_decay}
+    #         )  # add pg1 with weight_decay
+    #         optimizer.add_param_group({"params": pg2})
+    #         optimizer.add_param_group(
+    #             {"params": pg3, "lr": lr * self.stem_lr_ratio, "weight_decay": self.weight_decay}
+    #         )
+    #         self.optimizer = optimizer
 
-        return self.optimizer
+    #     return self.optimizer
 
