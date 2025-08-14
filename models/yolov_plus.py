@@ -4,6 +4,8 @@
 
 import torch.nn as nn
 
+import time
+
 class YOLOV(nn.Module):
     """
     YOLOX model module. The module list is defined by create_yolov3_modules function.
@@ -18,28 +20,42 @@ class YOLOV(nn.Module):
 
     def forward(self, x, targets=None,nms_thresh=0.5,lframe=0,gframe=32):
         # fpn output content features of [dark3, dark4, dark5]
+
+        print("yolov is forwarding !!!")
+
+        current_timestamp = time.time()
+
         fpn_outs = self.backbone(x)
-        if self.training:
-            assert targets is not None
-            loss, iou_loss, conf_loss, cls_loss, l1_loss,num_fg, \
-            loss_refined_cls,\
-            loss_refined_iou,\
-            loss_refined_obj = self.head(
-                fpn_outs, targets, x, lframe=lframe,gframe=gframe
-            )
-            outputs = {
-                "total_loss": loss,
-                "iou_loss": iou_loss,
-                "l1_loss": l1_loss,
-                "conf_loss": conf_loss,
-                "cls_loss": cls_loss,
-                "num_fg": num_fg,
-                "loss_refined_cls":loss_refined_cls,
-                "loss_refined_iou":loss_refined_iou,
-                "loss_refined_obj":loss_refined_obj
-            }
-        else:
 
-            outputs = self.head(fpn_outs,targets,x,nms_thresh=nms_thresh, lframe=lframe,gframe=gframe)
+        print(f"backbone time: {time.time() - current_timestamp}")
+        current_timestamp = time.time()
 
+        # if self.training:
+        #     assert targets is not None
+        #     loss, iou_loss, conf_loss, cls_loss, l1_loss,num_fg, \
+        #     loss_refined_cls,\
+        #     loss_refined_iou,\
+        #     loss_refined_obj = self.head(
+        #         fpn_outs, targets, x, lframe=lframe,gframe=gframe
+        #     )
+        #     outputs = {
+        #         "total_loss": loss,
+        #         "iou_loss": iou_loss,
+        #         "l1_loss": l1_loss,
+        #         "conf_loss": conf_loss,
+        #         "cls_loss": cls_loss,
+        #         "num_fg": num_fg,
+        #         "loss_refined_cls":loss_refined_cls,
+        #         "loss_refined_iou":loss_refined_iou,
+        #         "loss_refined_obj":loss_refined_obj
+        #     }
+        # else:
+
+        #     outputs = self.head(fpn_outs,targets,x,nms_thresh=nms_thresh, lframe=lframe,gframe=gframe)
+
+        # inference only
+        outputs = self.head(fpn_outs,targets,x,nms_thresh=nms_thresh, lframe=lframe,gframe=gframe)
+
+        print(f"head time: {time.time() - current_timestamp}")
+        
         return outputs
