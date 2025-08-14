@@ -265,6 +265,14 @@ class YOLOVHead(nn.Module):
         raw_cls_features = []
         raw_reg_features = []
 
+        torch.cuda.synchronize()  # Ensure all previous operations are complete
+        
+        # CNN timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
+
         for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
                 zip(self.cls_convs,  self.reg_convs, self.strides, xin)
         ):
@@ -295,6 +303,18 @@ class YOLOVHead(nn.Module):
                 raw_reg_features.append(reg_feat)
 
             outputs_decode.append(output_decode)
+
+        end_event.record()
+        torch.cuda.synchronize()
+        cnn_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+        print(f"  cnn time (GPU): {cnn_time:.6f}s")
+
+        # Other timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
+
         self.hw = [x.shape[-2:] for x in outputs_decode]
         outputs_decode = torch.cat([x.flatten(start_dim=2) for x in outputs_decode], dim=2
                                    ).permute(0, 2, 1)
@@ -351,27 +371,44 @@ class YOLOVHead(nn.Module):
         more_args = {'width': imgs.shape[-1], 'height': imgs.shape[-2], 'fg_score': fg_scores,
                      'cls_score': cls_scores, 'all_scores': all_scores, 'lframe': lframe,
                      'afternum': self.Afternum, 'gframe': gframe, 'use_score': self.use_score}
+        
+        end_event.record()
+        torch.cuda.synchronize()
+        other_time = start_event.elapsed_time(end_event) / 1000.0
+        print(f"  other time (GPU): {other_time:.6f}s")
 
-        if self.kwargs.get('agg_type','localagg')=='localagg':
-            features_cls, features_reg = self.agg(
-                                                features_cls,
-                                                features_reg,
-                                                locs,
-                                                **more_args)
+        # if self.kwargs.get('agg_type','localagg')=='localagg':
+        #     print("  I'm using localagg !!!")
+        #     features_cls, features_reg = self.agg(
+        #                                         features_cls,
+        #                                         features_reg,
+        #                                         locs,
+        #                                         **more_args)
 
 
-            cls_preds = self.cls_pred(features_cls)
-            obj_preds = self.obj_pred(features_reg)
-            if self.ota_mode:
-                reg_preds = self.reg_pred(features_reg)
-                reg_preds = torch.reshape(reg_preds, [-1, 4])
-            else:
-                reg_preds = None
+        #     cls_preds = self.cls_pred(features_cls)
+        #     obj_preds = self.obj_pred(features_reg)
+        #     if self.ota_mode:
+        #         reg_preds = self.reg_pred(features_reg)
+        #         reg_preds = torch.reshape(reg_preds, [-1, 4])
+        #     else:
+        #         reg_preds = None
 
-            cls_preds = torch.reshape(cls_preds, [-1,  self.num_classes])
-            obj_preds = torch.reshape(obj_preds, [-1, 1])
+        #     cls_preds = torch.reshape(cls_preds, [-1,  self.num_classes])
+        #     obj_preds = torch.reshape(obj_preds, [-1, 1])
 
-        elif self.kwargs.get('agg_type','localagg')=='msa':
+        # elif self.kwargs.get('agg_type','localagg')=='msa':
+        #     pass
+
+        # Attension timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
+
+        # use msa only
+        if self.kwargs.get('agg_type','localagg')=='msa':
+            print("  I'm using msa !!!")
             kwargs = self.kwargs
             kwargs.update({'lframe': lframe, 'gframe': gframe, 'afternum': self.Afternum})
             features_cls, features_reg = self.agg(features_cls_raw, features_reg_raw, cls_scores, fg_scores,
@@ -387,6 +424,17 @@ class YOLOVHead(nn.Module):
                 reg_preds = None
             else:
                 obj_preds, reg_preds = None, None
+
+        end_event.record()
+        torch.cuda.synchronize()
+        attension_time = start_event.elapsed_time(end_event) / 1000.0
+        print(f"  attension time (GPU): {attension_time:.6f}s")
+
+        # Final timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        
+        start_event.record()
 
         # inference only
         #cls_preds, obj_preds = cls_preds.sigmoid(), obj_preds.sigmoid()
@@ -409,6 +457,12 @@ class YOLOVHead(nn.Module):
                                             conf_output = obj_per_frame,
                                             nms_thre = nms_thresh,
                                             )
+        
+        end_event.record()
+        torch.cuda.synchronize()
+        final_time = start_event.elapsed_time(end_event) / 1000.0
+        print(f"  final time (GPU): {final_time:.6f}s")
+
         return result, result_ori  # result
 
     def get_output_and_grid(self, output, k, stride, dtype):
