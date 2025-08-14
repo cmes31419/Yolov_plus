@@ -43,11 +43,11 @@ class YOLOV(nn.Module):
     """
     YOLOX model module with improved timing accuracy.
     """
-    def __init__(self, backbone=None, head=None):
+    def __init__(self, backbone=None, head=None, csv_file="inference_times.csv"):
         super().__init__()
         self.backbone = backbone
         self.head = head
-
+        self.csv_file = csv_file
         try:
             with open(self.csv_file, 'x', newline='') as f:
                 writer = csv.writer(f)
