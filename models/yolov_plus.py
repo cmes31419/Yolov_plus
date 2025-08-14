@@ -4,6 +4,7 @@
 import torch
 import torch.nn as nn
 
+import csv
 import time
 import contextlib
 
@@ -46,13 +47,26 @@ class YOLOV(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.head = head
+
+        try:
+            with open(self.csv_file, 'x', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Backbone Time (s)', 'Head Time (s)'])
+        except FileExistsError:
+            pass
         
+    def _write_to_csv(self, backbone_time, head_time):
+        """Helper function to append times to CSV"""
+        with open(self.csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([f"{backbone_time:.6f}", f"{head_time:.6f}"])
+
     def forward(self, x, targets=None, nms_thresh=0.5, lframe=0, gframe=32):
         print("yolov is forwarding !!!")
         
-        # Method 1: Basic CPU timing (your current approach, but improved)
+        # Method 1: Basic CPU timing
         if not torch.cuda.is_available():
-            start_time = time.perf_counter()  # More precise than time.time()
+            start_time = time.perf_counter()
             fpn_outs = self.backbone(x)
             backbone_time = time.perf_counter() - start_time
             print(f"backbone time (CPU): {backbone_time:.6f}s")
@@ -64,8 +78,8 @@ class YOLOV(nn.Module):
             print(f"head time (CPU): {head_time:.6f}s")
             
         else:
-            # Method 2: GPU timing with CUDA events (RECOMMENDED for GPU inference)
-            torch.cuda.synchronize()  # Ensure all previous operations are complete
+            # Method 2: GPU timing with CUDA events
+            torch.cuda.synchronize()
             
             # Backbone timing
             start_event = torch.cuda.Event(enable_timing=True)
@@ -74,8 +88,8 @@ class YOLOV(nn.Module):
             start_event.record()
             fpn_outs = self.backbone(x)
             end_event.record()
-            torch.cuda.synchronize()  # Wait for completion
-            backbone_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            torch.cuda.synchronize()
+            backbone_time = start_event.elapsed_time(end_event) / 1000.0
             print(f"backbone time (GPU): {backbone_time:.6f}s")
             
             # Head timing
@@ -89,6 +103,9 @@ class YOLOV(nn.Module):
             torch.cuda.synchronize()
             head_time = start_event.elapsed_time(end_event) / 1000.0
             print(f"head time (GPU): {head_time:.6f}s")
+        
+        # Write times to CSV
+        self._write_to_csv(backbone_time, head_time)
         
         return outputs
 
