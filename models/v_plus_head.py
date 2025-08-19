@@ -11,13 +11,13 @@ import torch.nn.functional as F
 import torchvision
 from loguru import logger
 
-from yolox.models.post_process import postprocess,get_linking_mat
+from .post_process import postprocess,get_linking_mat
 from .post_trans import MSA_yolov, LocalAggregation,visual_attention
 from yolox.utils import bboxes_iou
-from yolox.utils.box_op import box_cxcywh_to_xyxy, generalized_box_iou
+from utils.box_op import box_cxcywh_to_xyxy, generalized_box_iou
 from .losses import IOUloss
 from .network_blocks import BaseConv, DWConv
-from yolox.utils.debug_vis import visual_predictions
+from utils.debug_vis import visual_predictions
 from matplotlib import pyplot as plt
 class YOLOVHead(nn.Module):
     def __init__(

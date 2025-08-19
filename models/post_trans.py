@@ -9,12 +9,12 @@ from .weight_init import trunc_normal_
 from .losses import IOUloss
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
-from yolox.utils.box_op import (box_cxcywh_to_xyxy, generalized_box_iou,extract_position_matrix,
+from utils.box_op import (box_cxcywh_to_xyxy, generalized_box_iou,extract_position_matrix,
                                 extract_position_embedding,
                                 pure_position_embedding)
 from yolox.utils import bboxes_iou
-from yolox.data.datasets.vid import get_timing_signal_1d
-from yolox.models.post_process import get_linking_mat
+from data.datasets.vid import get_timing_signal_1d
+from .post_process import get_linking_mat
 import time
 def visual_attention(data):
     data = data.cpu()

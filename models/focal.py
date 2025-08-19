@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from yolox.models.swin_transfomer import DropPath, to_2tuple, trunc_normal_
+from .swin_transfomer import DropPath, to_2tuple, trunc_normal_
 
 class Mlp(nn.Module):
     """ Multilayer perceptron."""

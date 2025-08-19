@@ -13,10 +13,10 @@ import torch
 
 from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
-from yolox.data.datasets.vid_classes import VID_classes
+from data.datasets.vid_classes import VID_classes
 from yolox.exp import get_exp
 from yolox.utils import fuse_model, get_model_info, vis
-from yolox.models.post_process import postprocess,get_linking_mat,post_linking
+from models.post_process import postprocess,get_linking_mat,post_linking
 import copy
 import random
 import numpy as np
