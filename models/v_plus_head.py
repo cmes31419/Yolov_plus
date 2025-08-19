@@ -77,15 +77,20 @@ class YOLOVHead(nn.Module):
         self.sim_thresh = sim_thresh
         self.ave = ave
         self.use_mask = use_mask
+        
+        print("Initializing YOLOVHead")
 
         if kwargs.get('ota_mode',False):
+            print('ota_mode is False')
             if kwargs.get('agg_type','localagg') == 'localagg':
+                print("Using LocalAggregation")
                 self.agg =  LocalAggregation(dim=self.width, heads=heads, attn_drop=drop, blocks=localBlocks,
                                                          **kwargs)
                 self.cls_pred = nn.Linear(self.width, num_classes)
                 self.obj_pred = nn.Linear(self.width, 1)
                 self.reg_pred = nn.Linear(self.width, 4)
             elif kwargs.get('agg_type','localagg') == 'msa':
+                print("Using MSA_yolov")
                 self.agg = MSA_yolov(dim=self.width, out_dim=4 * self.width,
                                      num_heads=heads, attn_drop=drop, reconf=kwargs.get('reconf',False),)
                 if kwargs.get('decouple_reg', False):
@@ -96,6 +101,7 @@ class YOLOVHead(nn.Module):
                     self.obj_pred = nn.Linear(4*self.width, 1)
                 self.cls_convs2 = nn.ModuleList()
         else:
+            print('ota_mode is True')
             if kwargs.get('reconf',False):
                 self.agg = LocalAggregation(dim=self.width, heads=heads, attn_drop=drop, blocks=localBlocks,
                                             **kwargs)

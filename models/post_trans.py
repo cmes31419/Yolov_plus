@@ -1,4 +1,7 @@
 import copy
+import os 
+
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -229,10 +232,40 @@ class Attention_msa(nn.Module):
 
         self.attn_drop = nn.Dropout(attn_drop)
 
+        # =======================================
+        # Added for saving attention matrix
+        self.save_attention = True
+        self.output_dir = "./attention_matrix"
+        self.forward_count = 0
+
+        if self.save_attention:
+            os.makedirs(self.output_dir, exist_ok=True)
+
+    def _save_attn_matrix(self,attn_matrx, prefix):
+        # helper function to save attention matrix
+        if not self.save_attention:
+            return
+        
+        # Convert tensor to np array
+        attn_np = attn_matrx.detach().cpu().numpy()
+
+        # save each head separately for multi-head attention
+        for head_idx in range(attn_np.shape[1]): # shape: [batch, heads, seq, seq]
+            filename = f"{self.output_dir}/{prefix}_fwd{self.forward_count}_head{head_idx}.txt"
+
+            # Get the attention matrix for this head (first item in batch)
+            head_mat = attn_np[0, head_idx]  # shape: [seq, seq]
+            
+            # Save with compression
+            np.savez_compressed(filename, data=head_mat)
+
+
     def forward(self, x_cls, x_reg, cls_score=None, fg_score=None,
                 return_attention=False, ave=True, sim_thresh=0.75,
                 use_mask=False,**kwargs):
         B, N, C = x_cls.shape
+        
+        self.forward_count += 1
 
         qkv_cls = self.qkv_cls(x_cls).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         qkv_reg = self.qkv_reg(x_reg).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
@@ -284,11 +317,19 @@ class Attention_msa(nn.Module):
                 attn_cls[:, :, 0:lframe * P, 0:lframe * P] = -1e4
             if 'reg' in local_mask_branch:
                 attn_reg[:, :, 0:lframe * P, 0:lframe * P] = -1e4
-
+        
+        # apply softmax
         attn_cls = attn_cls.softmax(dim=-1)
-        attn_cls = self.attn_drop(attn_cls)
-
         attn_reg = attn_reg.softmax(dim=-1)
+
+        # ================= save attention matrix =====================
+        if self.save_attention and self.forward_count == 5: 
+            self._save_attn_matrix(attn_cls, 'attn_cls')
+            self._save_attn_matrix(attn_reg, 'attn_reg')
+
+        # =============================================================
+
+        attn_cls = self.attn_drop(attn_cls)  
         attn_reg = self.attn_drop(attn_reg)
 
         attn = (attn_reg + attn_cls) / 2

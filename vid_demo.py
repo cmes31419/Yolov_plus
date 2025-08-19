@@ -91,8 +91,8 @@ def make_parser():
     )
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--gframe', default=32, help='global frame num')
-    parser.add_argument('--lframe', default=0, help='local frame num')
+    parser.add_argument('--gframe', default=0, help='global frame num')
+    parser.add_argument('--lframe', default=20, help='local frame num')
     parser.add_argument('--save_result', default=True)
     parser.add_argument('--post', default=False,action="store_true")
     parser.add_argument('--repp_cfg', default='./tools/yolo_repp_cfg.json' ,help='repp cfg filename', type=str)
