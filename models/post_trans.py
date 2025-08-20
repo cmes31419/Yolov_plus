@@ -249,12 +249,16 @@ class Attention_msa(nn.Module):
         # Convert tensor to np array
         attn_np = attn_matrx.detach().cpu().numpy()
 
+        print(f"attn_np.shape: {attn_np.shape}")
         # save each head separately for multi-head attention
         for head_idx in range(attn_np.shape[1]): # shape: [batch, heads, seq, seq]
-            filename = f"{self.output_dir}/{prefix}_fwd{self.forward_count}_head{head_idx}.txt"
+            print(f"head_idx: {head_idx}")
+            filename = f"{self.output_dir}/{prefix}_fwd{self.forward_count}_head{head_idx}"
 
             # Get the attention matrix for this head (first item in batch)
             head_mat = attn_np[0, head_idx]  # shape: [seq, seq]
+
+            print(f"head_mat: {head_mat.shape}")
             
             # Save with compression
             np.savez_compressed(filename, data=head_mat)
@@ -263,6 +267,15 @@ class Attention_msa(nn.Module):
     def forward(self, x_cls, x_reg, cls_score=None, fg_score=None,
                 return_attention=False, ave=True, sim_thresh=0.75,
                 use_mask=False,**kwargs):
+        
+        print("      Hi, this is Attention_msa_online !!!")
+
+        # Attention msa 1 timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
+
         B, N, C = x_cls.shape
         
         self.forward_count += 1
@@ -299,7 +312,16 @@ class Attention_msa(nn.Module):
         else:
             cls_score_mask = fg_score_mask = 1
 
+        end_event.record()
+        torch.cuda.synchronize()
+        msa1_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+        print(f"      attn msa 1 time (GPU): {msa1_time:.6f}s")
 
+        # Attention msa 2 timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
 
         # cls_score_mask = (cls_score < (cls_score.transpose(-2, -1) + 0.1)).type_as(cls_score)
         # fg_score_mask = (fg_score < (fg_score.transpose(-2, -1) + 0.1)).type_as(fg_score)
@@ -323,9 +345,9 @@ class Attention_msa(nn.Module):
         attn_reg = attn_reg.softmax(dim=-1)
 
         # ================= save attention matrix =====================
-        if self.save_attention and self.forward_count == 5: 
-            self._save_attn_matrix(attn_cls, 'attn_cls')
-            self._save_attn_matrix(attn_reg, 'attn_reg')
+        # if self.save_attention and self.forward_count == 5: 
+        #     self._save_attn_matrix(attn_cls, 'attn_cls')
+        #     self._save_attn_matrix(attn_reg, 'attn_reg')
 
         # =============================================================
 
@@ -341,23 +363,112 @@ class Attention_msa(nn.Module):
         x_ori_reg = v_reg.permute(0, 2, 1, 3).reshape(B, N, C)
         x_reg = torch.cat([x_reg, x_ori_reg], dim=-1)
 
+        end_event.record()
+        torch.cuda.synchronize()
+        msa2_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+        print(f"      attn mat cal time (GPU): {msa2_time:.6f}s")
+
+        # Attention msa 3 timing
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
+
         if ave:
+            print("      ave is True")
             conf_sim_thresh = kwargs.get('conf_sim_thresh', 0.99)
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa3_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 3-0 time (GPU): {msa3_time:.6f}s")
+
+            # Attention msa 3 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
+
             ones_matrix = torch.ones(attn.shape[2:]).to('cuda')
             zero_matrix = torch.zeros(attn.shape[2:]).to('cuda')
 
+            end_event.record()
+            torch.cuda.synchronize()
+            msa3_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 3-1 time (GPU): {msa3_time:.6f}s")
+
+            # Attention msa 3 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
+
             attn_cls_raw = torch.sum(attn_cls_raw, dim=1, keepdim=False)[0] / self.num_heads
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa3_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 3-2 time (GPU): {msa3_time:.6f}s")
+
+            # Attention msa 3 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
+
             attn_reg_raw = torch.sum(attn_reg_raw, dim=1, keepdim=False)[0] / self.num_heads
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa3_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 3-3 time (GPU): {msa3_time:.6f}s")
+
+            # Attention msa 3 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
+
             sim_mask = torch.where(attn_cls_raw > sim_thresh, ones_matrix, zero_matrix)
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa3_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 3 time (GPU): {msa3_time:.6f}s")
+
+            # Attention msa 4 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
+
             #remove ave and conf guide in the reg branch, modified in 2023.12.5
             obj_mask = torch.where(attn_reg_raw > conf_sim_thresh, ones_matrix, zero_matrix)
             if use_mask:
+                print("      use_mask is True")
                 sim_mask = sim_mask*cls_score_mask[0,0,:,:]*fg_score_mask[0,0,:,:]
             sim_attn = torch.sum(attn, dim=1, keepdim=False)[0] / self.num_heads
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa4_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 4 time (GPU): {msa4_time:.6f}s")
+
+            # Attention msa 5 timing
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
 
             sim_round2 = torch.softmax(sim_attn, dim=-1)
             sim_round2 = sim_mask * sim_round2 / (torch.sum(sim_mask * sim_round2, dim=-1, keepdim=True))
             obj_mask = obj_mask * sim_round2 / (torch.sum(obj_mask * sim_round2, dim=-1, keepdim=True))
+
+            end_event.record()
+            torch.cuda.synchronize()
+            msa5_time = start_event.elapsed_time(end_event) / 1000.0  # Convert to seconds
+            print(f"      attn msa 5 time (GPU): {msa5_time:.6f}s")
+
             return x_cls, x_reg, sim_round2, obj_mask
         else:
             return x_cls, x_reg, None, None
